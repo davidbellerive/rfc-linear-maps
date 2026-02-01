@@ -22,3 +22,26 @@
     ▶
   </button>
 </div>
+<script>
+(function(){
+  var wrap = document.getElementById('mapwrap-ttc1');
+  var controls = document.getElementById('mapcontrols-ttc1');
+
+  if (!wrap || !controls) return;
+
+  function updateControls(){
+    // scrollWidth > clientWidth means horizontal scrolling is possible
+    if (wrap.scrollWidth > wrap.clientWidth + 2) {
+      controls.style.display = 'flex';
+    } else {
+      controls.style.display = 'none';
+    }
+  }
+
+  // Run on load
+  updateControls();
+
+  // Run again if viewport changes (rotation / resize)
+  window.addEventListener('resize', updateControls);
+})();
+</script>
