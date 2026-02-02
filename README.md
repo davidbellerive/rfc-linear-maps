@@ -34,32 +34,77 @@ These maps are intended for **editorial and reference use**, not geographic accu
 
 ### 1. CSV is the source of truth
 
-All maps are generated from a structured CSV containing:
+All maps are generated from a structured CSV containing the following fields, in order:
 
 - **system**  
-  Used to generate the document name and folder hierarchy.
+  A high-level grouping (e.g. `TTC`, `REM`, `Metrolinx`).  
+  This value can optionally be used to:
+  - create subfolders during export
+  - populate subtitles
+  - provide contextual grouping across regions or agencies
 
-- **line ID**  
-  Used to generate the document name and folder hierarchy.
+- **region**  
+  A secondary descriptor (e.g. `Toronto`, `Peel`, `Montreal`).  
+  This field is **not required to be unique** and may be reused across multiple lines.  
+  It is typically used for:
+  - subtitles
+  - editorial context
+  - optional filename templates
 
 - **line name**  
-  Used to populate the map title.
+  The human-readable name of the line (e.g. `Line 5 Eglinton`, `Hurontario LRT`).  
+  This value is:
+  - used for the map title
+  - used as the default SVG filename
 
-- **years of operation**  
-  Automatically inserted in parentheses. No validation is performed, allowing arbitrary text if desired.
+- **years of operation** *(optional)*  
+  Free-form text (e.g. `2024–`, `2002–2017`, `Planned`).  
+  If present, it may be injected into title or subtitle templates.  
+  If empty, **no parentheses or separators are rendered**.
 
-- **RGB color**  
-  Used for the line indicator.
+- **RGB color (R,G,B)**  
+  The primary color of the line.
 
 - **station list** (pipe-separated)  
-  No hard limit on character length. The map canvas is extended vertically as needed to prevent conflicts between the title, line, and station labels.  
-  The canvas has been tested with station names up to **34 characters**. If additional space is required, the horizontal padding variable can be adjusted.
+  A linear list of stations in display order.
 
-This structure makes it trivial to regenerate or update maps as networks evolve.
+There is no hard character limit on station names.  
+The script dynamically adjusts layout to avoid overlap between:
+
+- title
+- subtitle
+- station labels
+
+Station names up to **34 characters** have been tested successfully.  
+If additional horizontal space is required, padding can be adjusted via configuration.
 
 ---
 
-### 2. SVGs must be self-contained
+### 2. Configuration is external and editable
+
+All layout, typography, and export behavior is controlled via `linear-config.json`, including:
+
+- independent fonts for:
+  - title
+  - subtitle
+  - station labels
+  - footer
+- title and subtitle templates using tokens:
+  - `{system}`
+  - `{region}`
+  - `{name}`
+  - `{years}`
+  - `{years_paren}`
+- automatic font fallback to `ArialMT` if a requested font is unavailable
+- export destination folder
+- optional grouping of outputs by system
+- filename templates for exported SVGs
+
+This allows contributors to adapt the tool to new projects **without modifying the script itself**.
+
+---
+
+### 3. SVGs must be self-contained
 
 Because the target site does not host custom fonts:
 
@@ -69,7 +114,7 @@ Because the target site does not host custom fonts:
 
 ---
 
-### 3. CMS-first constraints
+### 4. CMS-first constraints
 
 The target environment (Joomla) imposes several practical limitations:
 
@@ -89,18 +134,22 @@ As a result:
 
 The generator script:
 
-- creates one document per line
+- creates one document per CSV row
 - dynamically sizes the artboard height based on label extents
 - spaces stations evenly along a fixed-width baseline
 - supports angled or vertical station labels
-- exports SVGs using a consistent naming scheme
+- aligns titles and subtitles by **visual left edge**, not anchor point
+- exports SVGs using a configurable naming and folder scheme
 
-### Typical usage
+---
 
-1. Update `rfc-lines.csv`  
-2. Open Adobe Illustrator  
-3. Run `linear-map-generator.jsx`  
-4. Commit the exported SVGs  
+## Typical usage
+
+1. Update `lines.csv`  
+2. Update `linear-config.json` (if needed)  
+3. Open Adobe Illustrator  
+4. Run `linear-map-generator.jsx`  
+5. Commit the exported SVGs  
 
 ---
 
