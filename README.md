@@ -3,6 +3,7 @@
 This repository contains **programmatically generated linear transit maps** used by **Rail Fans Canada (RFC)** to illustrate rapid transit lines and station sequences across Canadian cities.
 
 The maps are designed to be:
+
 - visually consistent  
 - SVG-based (infinite resolution)  
 - CMS-friendly (Joomla-compatible)  
@@ -58,7 +59,7 @@ This structure makes it trivial to regenerate or update maps as networks evolve.
 
 ---
 
-### 2. SVGs must be **self-contained**
+### 2. SVGs must be self-contained
 
 Because the target site does not host custom fonts:
 
@@ -96,10 +97,10 @@ The generator script:
 
 ### Typical usage
 
-1. Update `rfc-lines.csv`
-2. Open Adobe Illustrator
-3. Run `linear-map-generator.jsx`
-4. Commit the exported SVGs
+1. Update `rfc-lines.csv`  
+2. Open Adobe Illustrator  
+3. Run `linear-map-generator.jsx`  
+4. Commit the exported SVGs  
 
 ---
 
@@ -107,16 +108,19 @@ The generator script:
 
 This project was **not built to any formal software standard**, nor was it originally developed by someone with professional programming experience.
 
-The code-base, including the Illustrator scripting structure, was developed with significant assistance from large language models (LLMs). Human oversight, testing, and iteration were applied, but the resulting code reflects a pragmatic, goal-driven approach rather than a formally engineered one.
+The codebase, including the Illustrator scripting structure, was developed with significant assistance from **large language models (LLMs)**. Human oversight, testing, and iteration were applied, but the resulting code reflects a pragmatic, goal-driven approach rather than a formally engineered one.
 
-- the codebase should not be considered production-grade software
-- there are no guarantees regarding stability, performance, or long-term maintainability
-- design decisions prioritize practical outcomes over architectural rigor
+As such:
 
-Over time, the intent is to **progressively refactor and replace LLM-generated code** with a manually written and better-structured codebase that is more suitable for use beyond the very specific one this initial version was meant to accomplish.
+- the codebase should not be considered production-grade software  
+- there are no guarantees regarding stability, performance, or long-term maintainability  
+- design decisions prioritize practical outcomes over architectural rigor  
 
-As such, this repository should be viewed as:
-- a working tool
-- an evolving experiment
+Over time, the intent is to **progressively refactor and replace LLM-generated code** with a manually written and better-structured codebase that is more suitable for use beyond the very specific purpose this initial version was meant to accomplish.
+
+Until then, this repository should be viewed as:
+
+- a working tool  
+- an evolving experiment  
 
 Use, adapt, and contribute accordingly.
