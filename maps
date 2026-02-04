@@ -14,31 +14,37 @@
 
 <script>
 (function(){
-  var wrap = document.querySelector('.mapwrap');
-  var controls = document.querySelector('.mapcontrols');
-  if (!wrap || !controls) return;
+  function initPair(wrap, controls){
+    if (!wrap || !controls) return;
 
-  function update(){
-    controls.style.display =
-      wrap.scrollWidth > wrap.clientWidth + 2 ? 'flex' : 'none';
+    function step(){ return Math.round(wrap.clientWidth * 0.7); }
+    function update(){
+      controls.style.display = (wrap.scrollWidth > wrap.clientWidth + 2) ? 'flex' : 'none';
+    }
+
+    controls.addEventListener('click', function(e){
+      var dir = e.target && e.target.dataset ? e.target.dataset.dir : null;
+      if (!dir) return;
+      wrap.scrollBy({ left: parseInt(dir,10) * step(), behavior: 'smooth' });
+    });
+
+    var img = wrap.querySelector('img');
+    if (img) img.addEventListener('load', update);
+
+    window.addEventListener('resize', update);
+    if ('ResizeObserver' in window) new ResizeObserver(update).observe(wrap);
+
+    wrap.addEventListener('touchmove', function(e){ e.preventDefault(); }, { passive:false });
+
+    update();
   }
 
-  controls.addEventListener('click', function(e){
-    if (!e.target.dataset.dir) return;
-    wrap.scrollBy({
-      left: parseInt(e.target.dataset.dir,10) * 400,
-      behavior: 'smooth'
-    });
+  var wraps = document.querySelectorAll('.mapwrap');
+  wraps.forEach(function(wrap){
+    // assumes controls is the next .mapcontrols sibling
+    var controls = wrap.nextElementSibling;
+    if (!controls || !controls.classList.contains('mapcontrols')) return;
+    initPair(wrap, controls);
   });
-
-  var img = wrap.querySelector('img');
-  if (img) img.addEventListener('load', update);
-  window.addEventListener('resize', update);
-  update();
-
-  // Disable touch panning inside map area (buttons-only UX)
-  wrap.addEventListener('touchmove', function(e){
-    e.preventDefault();
-  }, { passive:false });
 })();
 </script>
