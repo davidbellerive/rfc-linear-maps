@@ -11,6 +11,8 @@ The maps are designed to be:
 
 The core workflow uses **Adobe Illustrator scripting** to generate maps from a CSV source of truth, and publishes the resulting SVGs for direct embedding on the web.
 
+![Eglinton Crosstown (2026)](https://raw.githubusercontent.com/davidbellerive/linear-maps/refs/heads/main/rfc-maps/Toronto%20Transit%20Commission%20(TTC)/Line%205%20-%20Eglinton%20Crosstown%202026.svg)
+
 ---
 
 ## What this project does
