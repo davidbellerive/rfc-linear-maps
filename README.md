@@ -173,3 +173,7 @@ Until then, this repository should be viewed as:
 - an evolving experiment  
 
 Use, adapt, and contribute accordingly.
+
+---
+
+Created and maintained by David Bellerive (https://dbellerive.ca) for Rail Fans Canada (https://www.railfans.ca)
