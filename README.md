@@ -9,7 +9,7 @@ The maps are designed to be:
 - CMS-friendly (Joomla-compatible)  
 - usable on mobile without fighting site templates  
 
-The core workflow uses **Adobe Illustrator scripting** to generate maps from a CSV source of truth, and publishes the resulting SVGs for direct embedding on the web.
+The core workflow uses **Adobe Illustrator scripting** to generate maps from a JSON source of truth, and publishes the resulting SVGs for direct embedding on the web.
 
 ![Eglinton Crosstown (2026)](https://raw.githubusercontent.com/davidbellerive/linear-maps/refs/heads/main/rfc-maps/Toronto%20Transit%20Commission%20(TTC)/Line%205%20-%20Eglinton%20Crosstown%202026.svg)
 
@@ -34,41 +34,9 @@ These maps are intended for **editorial and reference use**, not geographic accu
 
 ## Design principles
 
-### 1. CSV is the source of truth
+### 1. JSON is the source of truth
 
-All maps are generated from a structured CSV containing the following fields, in order:
-
-- **system**  
-  A high-level grouping (e.g. `TTC`, `REM`, `Metrolinx`).  
-  This value can optionally be used to:
-  - create subfolders during export
-  - populate subtitles
-  - provide contextual grouping across regions or agencies
-
-- **region**  
-  A secondary descriptor (e.g. `Toronto`, `Peel`, `Montreal`).  
-  This field is **not required to be unique** and may be reused across multiple lines.  
-  It is typically used for:
-  - subtitles
-  - editorial context
-  - optional filename templates
-
-- **line name**  
-  The human-readable name of the line (e.g. `Line 5 Eglinton`, `Hurontario LRT`).  
-  This value is:
-  - used for the map title
-  - used as the default SVG filename
-
-- **years of operation** *(optional)*  
-  Free-form text (e.g. `2024–`, `2002–2017`, `Planned`).  
-  If present, it may be injected into title or subtitle templates.  
-  If empty, **no parentheses or separators are rendered**.
-
-- **RGB color (R,G,B)**  
-  The primary color of the line.
-
-- **station list** (pipe-separated)  
-  A linear list of stations in display order.
+All maps are generated from a structured JSON containing the elements listed in `DATASPEC.md`.
 
 There is no hard character limit on station names.  
 The script dynamically adjusts layout to avoid overlap between:
@@ -102,7 +70,7 @@ All layout, typography, and export behavior is controlled via `linear-config.jso
 - optional grouping of outputs by system
 - filename templates for exported SVGs
 
-This allows contributors to adapt the tool to new projects **without modifying the script itself**.
+This allows contributors to adapt the tool to new projects without modifying the script itself.
 
 ---
 
@@ -136,7 +104,7 @@ As a result:
 
 The generator script:
 
-- creates one document per CSV row
+- creates one document per JSON file
 - dynamically sizes the artboard height based on label extents
 - spaces stations evenly along a fixed-width baseline
 - supports angled or vertical station labels
@@ -147,11 +115,10 @@ The generator script:
 
 ## Typical usage
 
-1. Update `lines.csv`  
+1. Create `line.json` file(s)  
 2. Update `linear-config.json` (if needed)  
 3. Open Adobe Illustrator  
 4. Run `linear-map-generator.jsx`  
-5. Commit the exported SVGs  
 
 ---
 
