@@ -73,17 +73,18 @@
     // Export
     EXPORT_SVG: true,
 
-    // If empty: export next to lines.csv (legacy behavior)
+    // If empty: export into the /data folder (same base as input).
     // If set:
     //   - absolute path: "C:/path/to/output" or "/Users/name/output"
-    //   - relative path: "exports-svg" (relative to lines.csv folder)
+    //   - relative path: "exports-svg" (relative to /data folder)
     EXPORT_DESTINATION_FOLDER: "",
 
-    // If true: create a subfolder per system (CSV col 1)
-    EXPORT_GROUP_BY_SYSTEM: false,
+    // Where to export inside the base folder. Tokens:
+    // {base} {region} {system} {id}
+    // Example: "{base}/{region}/{system}"
+    EXPORT_LOCATION_TEMPLATE: "{base}/{region}/{system}",
 
-    // Output file name (without extension). Default uses line_name (CSV field 3 => L.name)
-    // Tokens: {system} {id} {name} {years} {years_paren}
+    // Output file name (without extension). Tokens: {system} {id} {name} {years} {years_paren}
     EXPORT_FILENAME_TEMPLATE: "{name}",
 
     OUTLINE_TEXT_FOR_SVG: true,
@@ -134,7 +135,6 @@
     return base;
   }
 
-  // Font getter: if requested font doesn't exist, fallback to ArialMT
   function getFontOrArial(fontName) {
     var name = trim(fontName || "");
     if (!name) name = "ArialMT";
@@ -171,13 +171,13 @@
     var cfgFile = null;
 
     if (scriptFolder) {
-      var candidate = File(scriptFolder.fsName + "/linear-config.json");
+      var candidate = File(scriptFolder.fsName + "/configuration.json");
       if (candidate.exists) cfgFile = candidate;
     }
 
     if (!cfgFile) {
-      cfgFile = File.openDialog("Select linear-config.json", "JSON:*.json");
-      if (!cfgFile) throw new Error("No linear-config.json selected.");
+      cfgFile = File.openDialog("Select configuration.json", "JSON:*.json");
+      if (!cfgFile) throw new Error("No configuration.json selected.");
     }
 
     var overrides = loadConfigFromJSONFile(cfgFile);
@@ -186,20 +186,18 @@
     for (var k in CFG_DEFAULTS) cfg[k] = CFG_DEFAULTS[k];
     mergeDeep(cfg, overrides);
 
-    // Ensure font defaults always exist (and always fallback to ArialMT)
     if (!cfg.FONT_LABEL_NAME) cfg.FONT_LABEL_NAME = "ArialMT";
     if (!cfg.FONT_TITLE_NAME) cfg.FONT_TITLE_NAME = "ArialMT";
     if (!cfg.FONT_SUBTITLE_NAME) cfg.FONT_SUBTITLE_NAME = "ArialMT";
     if (!cfg.FONT_FOOTER_NAME) cfg.FONT_FOOTER_NAME = "ArialMT";
 
-    // Warn unknown keys (typo catcher)
     var unknown = [];
     for (var ok in overrides) {
       if (overrides.hasOwnProperty(ok) && !CFG_DEFAULTS.hasOwnProperty(ok)) unknown.push(ok);
     }
     if (unknown.length) {
       alert(
-        "linear-config.json contains " + unknown.length + " unknown key(s).\n" +
+        "configuration.json contains " + unknown.length + " unknown key(s).\n" +
         "They will still be applied, but double-check for typos:\n\n" +
         unknown.join(", ")
       );
@@ -215,104 +213,160 @@
     return;
   }
 
-  // CSV splitter that respects quotes and escaped quotes
-  function splitCSVLine(line) {
-    var out = [];
-    var cur = "";
-    var inQuotes = false;
+  // =========================
+  // JSON line format helpers
+  // =========================
+  function hexToRGB(hex) {
+    hex = trim(hex || "");
+    if (!hex) return { r: 0, g: 0, b: 0 };
+    if (hex.charAt(0) === "#") hex = hex.substring(1);
+    if (!/^[0-9a-fA-F]{6}$/.test(hex)) return { r: 0, g: 0, b: 0 };
 
-    for (var i = 0; i < line.length; i++) {
-      var ch = line.charAt(i);
+    var r = parseInt(hex.substring(0, 2), 16);
+    var g = parseInt(hex.substring(2, 4), 16);
+    var b = parseInt(hex.substring(4, 6), 16);
+    return { r: r, g: g, b: b };
+  }
 
-      if (ch === '"') {
-        if (inQuotes && i + 1 < line.length && line.charAt(i + 1) === '"') {
-          cur += '"'; i++;
-        } else {
-          inQuotes = !inQuotes;
-        }
-      } else if (ch === "," && !inQuotes) {
-        out.push(cur); cur = "";
-      } else {
-        cur += ch;
-      }
+  function normalizeMultilineText(v) {
+    if (v === null || v === undefined) return "";
+    if (v instanceof Array) {
+      var parts = [];
+      for (var i = 0; i < v.length; i++) parts.push(String(v[i]));
+      return parts.join("\r");
     }
-    out.push(cur);
-    return out;
+    return String(v);
   }
 
-  function isIntLike(s) {
-    s = trim(s);
-    if (s === "") return false;
-    return /^-?\d+$/.test(s);
+  function normalizeStationEntry(entry) {
+    if (typeof entry === "string") {
+      return { text: entry, icons: [] };
+    }
+    if (isPlainObject(entry)) {
+      var name = normalizeMultilineText(entry.name);
+      var icons = (entry.icons instanceof Array) ? entry.icons : [];
+      return { text: name, icons: icons };
+    }
+    return { text: "", icons: [] };
   }
 
-  function clamp255(n) {
-    n = parseInt(n, 10);
-    if (isNaN(n)) return 0;
-    return Math.max(0, Math.min(255, n));
-  }
+  function loadLineJSONFile(file) {
+    var raw = trim(readFile(file));
+    if (raw && raw.charCodeAt(0) === 0xFEFF) raw = raw.substring(1);
 
-  // system, id, name, years, then scan for first 3 integer cols = r,g,b
-  // remaining cols are stations (usually one quoted field).
-  function parseLinesCSV(text) {
-    var rows = text.split(/\r\n|\n|\r/);
-    var parsed = [];
+    var parsed = safeParseJSON(raw);
+    if (parsed === null) throw new Error("Invalid JSON in: " + file.fsName);
 
-    for (var i = 0; i < rows.length; i++) {
-      var raw = trim(rows[i]);
-      if (!raw) continue;
-      if (raw.indexOf("#") === 0) continue;
-      if (i === 0 && raw.toLowerCase().indexOf("system,") === 0) continue;
-
-      var cols = splitCSVLine(raw);
-      if (cols.length < 7) continue;
-
-      var system = trim(cols[0]);
-      var line_id = trim(cols[1]);
-      var line_name = trim(cols[2]);
-      var years = trim(cols[3]);
-
-      var rgbStart = -1;
-      for (var k = 4; k < cols.length; k++) {
-        if (isIntLike(cols[k]) && (k + 2) < cols.length && isIntLike(cols[k + 1]) && isIntLike(cols[k + 2])) {
-          rgbStart = k;
-          break;
-        }
-      }
-      if (rgbStart === -1) continue;
-
-      var r = clamp255(cols[rgbStart]);
-      var g = clamp255(cols[rgbStart + 1]);
-      var b = clamp255(cols[rgbStart + 2]);
-
-      var stationsRaw = "";
-      for (var j = rgbStart + 3; j < cols.length; j++) {
-        if (stationsRaw) stationsRaw += ",";
-        stationsRaw += cols[j];
-      }
-      stationsRaw = trim(stationsRaw);
-
-      if (stationsRaw.length >= 2 && stationsRaw.charAt(0) === '"' && stationsRaw.charAt(stationsRaw.length - 1) === '"') {
-        stationsRaw = stationsRaw.substring(1, stationsRaw.length - 1);
-      }
-
-      var stations = stationsRaw.split("|");
-      for (var s = 0; s < stations.length; s++) stations[s] = trim(stations[s]);
-      if (stations.length < 2) continue;
-
-      parsed.push({
-        system: system,
-        id: line_id,
-        name: line_name,
-        years: years,
-        color: { r: r, g: g, b: b },
-        stations: stations
-      });
+    if (!parsed.line || !isPlainObject(parsed.line)) {
+      throw new Error("Missing 'line' object in: " + file.fsName);
     }
 
-    return parsed;
+    var region = trim(parsed.region);
+    var system = trim(parsed.system);
+
+    var lineObj = parsed.line;
+    var id = trim(lineObj.id);
+    var name = normalizeMultilineText(lineObj.name);
+    var colorHex = trim(lineObj.color);
+    var stationsRaw = lineObj.stations;
+
+    if (!id) throw new Error("Missing line.id in: " + file.fsName);
+    if (!name) throw new Error("Missing line.name in: " + file.fsName);
+    if (!colorHex) throw new Error("Missing line.color in: " + file.fsName);
+    if (!(stationsRaw instanceof Array) || stationsRaw.length < 2) {
+      throw new Error("line.stations must be an array with 2+ entries in: " + file.fsName);
+    }
+
+    var stations = [];
+    for (var i = 0; i < stationsRaw.length; i++) {
+      var st = normalizeStationEntry(stationsRaw[i]);
+      if (!trim(st.text)) continue;
+      stations.push(st.text);
+    }
+    if (stations.length < 2) throw new Error("Need 2+ valid stations in: " + file.fsName);
+
+    return {
+      region: region,      // may be ""
+      system: system,      // may be ""
+      id: id,
+      name: name,
+      years: "",           // kept for template compatibility
+      color: hexToRGB(colorHex),
+      stations: stations,
+      __sourceFile__: file
+    };
   }
 
+  // =========================
+  // File/folder traversal
+  // =========================
+  function collectLineJSONFiles(rootFolder) {
+    var results = [];
+
+    function walk(folder) {
+      var items = folder.getFiles();
+      for (var i = 0; i < items.length; i++) {
+        var it = items[i];
+        if (it instanceof Folder) {
+          walk(it);
+        } else if (it instanceof File) {
+          if (/^configuration\.json$/i.test(it.name)) continue;
+          if (/\.json$/i.test(it.name)) results.push(it);
+        }
+      }
+    }
+
+    walk(rootFolder);
+
+    results.sort(function (a, b) {
+      var A = a.fsName.toLowerCase();
+      var B = b.fsName.toLowerCase();
+      return A < B ? -1 : (A > B ? 1 : 0);
+    });
+
+    return results;
+  }
+
+  function inferRegionSystemFromPath(dataFolder, file) {
+    var rel = file.parent.fsName;
+    var base = dataFolder.fsName;
+
+    rel = rel.split("\\").join("/");
+    base = base.split("\\").join("/");
+
+    if (rel.indexOf(base) !== 0) return { region: "", system: "" };
+
+    var tail = rel.substring(base.length);
+    if (tail.charAt(0) === "/") tail = tail.substring(1);
+    if (!tail) return { region: "", system: "" };
+
+    var parts = tail.split("/");
+    var region = (parts.length >= 1) ? parts[0] : "";
+    var system = (parts.length >= 2) ? parts[1] : "";
+
+    return { region: region, system: system };
+  }
+
+  function loadAllLinesFromDataFolder(dataFolder) {
+    var files = collectLineJSONFiles(dataFolder);
+    if (!files.length) throw new Error("No line JSON files found under: " + dataFolder.fsName);
+
+    var lines = [];
+    for (var i = 0; i < files.length; i++) {
+      var L = loadLineJSONFile(files[i]);
+
+      var inferred = inferRegionSystemFromPath(dataFolder, files[i]);
+      if (!trim(L.region) && trim(inferred.region)) L.region = inferred.region;
+      if (!trim(L.system) && trim(inferred.system)) L.system = inferred.system;
+
+      lines.push(L);
+    }
+    return lines;
+  }
+
+  // =========================
+  // Layout helpers
+  // =========================
   function getLabelRotation() {
     if (CFG.LABEL_MODE === "vertical") return 90;
     return 90 + CFG.LABEL_TILT;
@@ -340,7 +394,7 @@
     for (var i = 0; i < doc.textFrames.length; i++) {
       var tf = doc.textFrames[i];
       try {
-        var gb = tf.geometricBounds; // [L,T,R,B]
+        var gb = tf.geometricBounds;
         maxTop = Math.max(maxTop, gb[1]);
       } catch (e) {}
     }
@@ -351,7 +405,6 @@
     var ab = doc.artboards[0];
     ab.artboardRect = [0, newH, CFG.ARTBOARD_WIDTH, 0];
 
-    // rebuild bg
     for (var i = doc.pathItems.length - 1; i >= 0; i--) {
       var p = doc.pathItems[i];
       if (p.name === "bg-white") {
@@ -395,7 +448,6 @@
     footer.left = (CFG.ARTBOARD_WIDTH - w) / 2;
   }
 
-  // ---- template helpers ----
   function applyTemplate(tpl, L) {
     var years = trim(L.years || "");
     var yearsParen = years ? (" (" + years + ")") : "";
@@ -410,23 +462,18 @@
     return s;
   }
 
-  // ----- OUTLINE-BASED LEFT ALIGNMENT (reliable) -----
   function getOutlinedLeft(tf) {
-    // Duplicate → outline → measure → delete, so we don't destroy live text
     var dup = null;
     var g = null;
     try {
       dup = tf.duplicate();
-      // keep it out of the way; does not need to be visible
       dup.hidden = true;
-
-      // Illustrator sometimes needs a redraw before createOutline/bounds settle
       app.redraw();
 
-      g = dup.createOutline(); // GroupItem
+      g = dup.createOutline();
       app.redraw();
 
-      var gb = g.geometricBounds; // [L,T,R,B] of outline geometry
+      var gb = g.geometricBounds;
       var left = gb[0];
 
       try { g.remove(); } catch (e1) {}
@@ -436,13 +483,11 @@
     } catch (e) {
       try { if (g) g.remove(); } catch (e3) {}
       try { if (dup) dup.remove(); } catch (e4) {}
-      // fallback to geometricBounds if outlining fails
       try { return tf.geometricBounds[0]; } catch (e5) { return tf.left; }
     }
   }
 
   function snapTextOutlineLeft(tf, targetX) {
-    // move tf so its OUTLINED left edge equals targetX
     var leftNow = getOutlinedLeft(tf);
     var dx = targetX - leftNow;
     tf.left += dx;
@@ -468,7 +513,6 @@
     title.left = CFG.TITLE_LEFT;
     title.top  = H - CFG.TITLE_TOP_FROM_TOP;
 
-    // Make title's outlined-left EXACTLY TITLE_LEFT
     var titleOutlineLeft = snapTextOutlineLeft(title, CFG.TITLE_LEFT);
 
     return { frame: title, outlineLeft: titleOutlineLeft };
@@ -489,39 +533,78 @@
     sub.textRange.characterAttributes.fillColor = rgb(CFG.SUBTITLE_COLOR);
     sub.textRange.paragraphAttributes.justification = Justification.LEFT;
 
-    // initial placement
     sub.left = CFG.SUBTITLE_LEFT;
     sub.top  = H - CFG.SUBTITLE_TOP_FROM_TOP;
 
-    // If a title outline-left is provided, match it; otherwise snap to SUBTITLE_LEFT
     var target = (alignOutlineLeftToX !== null && alignOutlineLeftToX !== undefined)
       ? alignOutlineLeftToX
       : CFG.SUBTITLE_LEFT;
 
     snapTextOutlineLeft(sub, target);
-
     return sub;
   }
 
-  function ensureFolder(parentFolder, name) {
-    var f = Folder(parentFolder.fsName + "/" + name);
-    if (!f.exists) {
-      if (!f.create()) throw new Error("Could not create folder: " + f.fsName);
-    }
-    return f;
-  }
-
-  function resolveExportBaseFolder(linesFile) {
+  // =========================
+  // Export helpers
+  // =========================
+  function resolveExportBaseFolder(dataFolder) {
     var dest = trim(CFG.EXPORT_DESTINATION_FOLDER || "");
-    if (!dest) return linesFile.parent;
+    if (!dest) return dataFolder;
 
     var isAbs = (/^[A-Za-z]\:/.test(dest) || dest.charAt(0) === "/" || dest.charAt(0) === "\\");
-    var f = isAbs ? Folder(dest) : Folder(linesFile.parent.fsName + "/" + dest);
+    var f = isAbs ? Folder(dest) : Folder(dataFolder.fsName + "/" + dest);
 
     if (!f.exists) {
       if (!f.create()) throw new Error("Could not create export destination: " + f.fsName);
     }
     return f;
+  }
+
+  function sanitizePathPart(s) {
+    return safeFileName(s || "");
+  }
+
+  function applyExportLocationTemplate(tpl, baseFolder, L) {
+    var t = tpl || "{base}";
+    t = t.split("{base}").join(baseFolder.fsName.replace(/\\/g, "/"));
+    t = t.split("{region}").join(sanitizePathPart(L.region || ""));
+    t = t.split("{system}").join(sanitizePathPart(L.system || ""));
+    t = t.split("{id}").join(sanitizePathPart(L.id || ""));
+
+    t = t.replace(/\/+/g, "/").replace(/\/$/g, "");
+    return t;
+  }
+
+  // mkdir -p for nested folder paths
+  function ensureFolderFromPath(pathStr) {
+    pathStr = (pathStr || "").replace(/\\/g, "/");
+    if (!pathStr) throw new Error("Empty export folder path");
+
+    // Handle Windows drive letter "C:/..."
+    var drive = "";
+    if (/^[A-Za-z]\:\//.test(pathStr)) {
+      drive = pathStr.substring(0, 3); // "C:/"
+      pathStr = pathStr.substring(3); // rest
+    }
+
+    var isAbsUnix = (pathStr.charAt(0) === "/");
+    if (isAbsUnix) pathStr = pathStr.substring(1);
+
+    var parts = pathStr.split("/");
+    var curPath = drive ? drive : (isAbsUnix ? "/" : "");
+
+    for (var i = 0; i < parts.length; i++) {
+      var part = parts[i];
+      if (!part) continue;
+      curPath = curPath ? (curPath.replace(/\/$/, "") + "/" + part) : part;
+
+      var f = Folder(curPath);
+      if (!f.exists) {
+        if (!f.create()) throw new Error("Could not create export folder: " + f.fsName);
+      }
+    }
+
+    return Folder(drive + (isAbsUnix ? "/" : "") + pathStr);
   }
 
   function exportAsSVG(doc, destFile) {
@@ -591,65 +674,56 @@
   }
 
   // =========================
-  // Load lines CSV (lines.csv)
+  // Locate /data folder and load JSON lines
   // =========================
   var scriptFolder = getScriptFolder();
-  var dataFile = null;
+  var dataFolder = null;
 
   if (scriptFolder) {
-    var candidateCSV = File(scriptFolder.fsName + "/lines.csv");
-    if (candidateCSV.exists) dataFile = candidateCSV;
+    var candidateData = Folder(scriptFolder.fsName + "/data");
+    if (candidateData.exists) dataFolder = candidateData;
   }
 
-  if (!dataFile) {
-    dataFile = File.openDialog("Select lines.csv", "CSV:*.csv");
-    if (!dataFile) {
-      alert("No lines.csv selected.");
+  if (!dataFolder) {
+    dataFolder = Folder.selectDialog("Select /data folder (contains per-line JSON files)");
+    if (!dataFolder) {
+      alert("No /data folder selected.");
       return;
     }
   }
 
-  var csvText;
-  try { csvText = readFile(dataFile); }
-  catch (e) {
-    alert("Failed to read CSV:\n" + e.message);
-    return;
-  }
-
   var LINES;
-  try { LINES = parseLinesCSV(csvText); }
-  catch (e2) {
-    alert("Failed to parse CSV:\n" + e2.message);
+  try { LINES = loadAllLinesFromDataFolder(dataFolder); }
+  catch (eLoad) {
+    alert("Failed to load line JSON:\n" + eLoad.message);
     return;
   }
 
   if (!LINES.length) {
-    alert("No valid rows found in CSV.");
+    alert("No valid line JSON files found under:\n" + dataFolder.fsName);
     return;
   }
 
   // =========================
-  // Export folder resolution
+  // Export base folder
   // =========================
   var exportBaseFolder = null;
   if (CFG.EXPORT_SVG) {
-    try {
-      exportBaseFolder = resolveExportBaseFolder(dataFile);
-    } catch (eDest) {
+    try { exportBaseFolder = resolveExportBaseFolder(dataFolder); }
+    catch (eDest) {
       alert(eDest.message);
       return;
     }
   }
 
   // =========================
-  // Fonts (resolved once, all fallback to ArialMT)
+  // Fonts
   // =========================
   var labelFontObj = getFontOrArial(CFG.FONT_LABEL_NAME);
   var titleFontObj = getFontOrArial(CFG.FONT_TITLE_NAME);
   var subtitleFontObj = getFontOrArial(CFG.FONT_SUBTITLE_NAME);
   var footerFontObj = getFontOrArial(CFG.FONT_FOOTER_NAME);
 
-  // Shared objects
   var stationStroke = rgb(CFG.STATION_OUTLINE);
   var labelRotation = getLabelRotation();
 
@@ -662,14 +736,11 @@
     var doc = app.documents.add(DocumentColorSpace.RGB, CFG.ARTBOARD_WIDTH, CFG.ARTBOARD_HEIGHT);
     doc.rulerUnits = RulerUnits.Pixels;
 
-    var ab = doc.artboards[0];
-    ab.artboardRect = [0, CFG.ARTBOARD_HEIGHT, CFG.ARTBOARD_WIDTH, 0];
-
+    doc.artboards[0].artboardRect = [0, CFG.ARTBOARD_HEIGHT, CFG.ARTBOARD_WIDTH, 0];
     addWhiteBackground(doc);
 
     var baselineY = CFG.BASELINE_Y;
 
-    // padding
     var padLeft = CFG.H_PADDING;
     var padRight = CFG.H_PADDING;
 
@@ -689,7 +760,6 @@
 
     var spacing = (lineRight - lineLeft) / (L.stations.length - 1);
 
-    // Optional line outline
     if (CFG.LINE_OUTLINE_ENABLED) {
       var outline = doc.pathItems.add();
       outline.stroked = true;
@@ -700,21 +770,19 @@
       outline.setEntirePath([[lineLeft, baselineY], [lineRight, baselineY]]);
     }
 
-    // Main line
-    var line = doc.pathItems.add();
-    line.stroked = true;
-    line.filled = false;
-    line.strokeWidth = CFG.LINE_STROKE;
-    line.strokeCap = StrokeCap.ROUNDENDCAP;
-    line.strokeColor = rgb(L.color);
-    line.setEntirePath([[lineLeft, baselineY], [lineRight, baselineY]]);
+    var mainLine = doc.pathItems.add();
+    mainLine.stroked = true;
+    mainLine.filled = false;
+    mainLine.strokeWidth = CFG.LINE_STROKE;
+    mainLine.strokeCap = StrokeCap.ROUNDENDCAP;
+    mainLine.strokeColor = rgb(L.color);
+    mainLine.setEntirePath([[lineLeft, baselineY], [lineRight, baselineY]]);
 
     var white = new RGBColor();
     white.red = 255; white.green = 255; white.blue = 255;
 
     var lineTopY = baselineY + (CFG.LINE_STROKE / 2);
 
-    // Stations + labels
     for (var i = 0; i < L.stations.length; i++) {
       var x = lineLeft + i * spacing;
 
@@ -755,10 +823,8 @@
       label.top += ((lineTopY + CFG.LABEL_CLEARANCE) - gb[3]);
     }
 
-    // Footer first (so height calc includes it if needed)
     drawFooter(doc, CFG.FOOTER_TEXT, footerFontObj);
 
-    // Dynamic height pass
     if (CFG.AUTO_HEIGHT) {
       var maxTextTop = getMaxTopOfTextFrames(doc);
 
@@ -771,24 +837,19 @@
       resizeArtboardHeight(doc, neededH);
     }
 
-    // Title + Subtitle after resizing (subtitle aligned to TITLE via outline-left)
     var titleInfo = drawTitle(doc, L, titleFontObj);
     var titleOutlineLeft = titleInfo ? titleInfo.outlineLeft : null;
     drawSubtitle(doc, L, subtitleFontObj, titleOutlineLeft);
 
-    // =========================
-    // Export SVG
-    // =========================
     if (CFG.EXPORT_SVG && exportBaseFolder) {
       var targetFolder = exportBaseFolder;
 
-      if (CFG.EXPORT_GROUP_BY_SYSTEM) {
-        try {
-          targetFolder = ensureFolder(exportBaseFolder, safeFileName(L.system));
-        } catch (eSys) {
-          alert("Could not create system folder:\n" + eSys.message);
-          targetFolder = exportBaseFolder;
-        }
+      try {
+        var targetPath = applyExportLocationTemplate(CFG.EXPORT_LOCATION_TEMPLATE, exportBaseFolder, L);
+        targetFolder = ensureFolderFromPath(targetPath);
+      } catch (eLoc) {
+        alert("Could not resolve export folder for line:\n" + (L.id || L.name) + "\n\n" + eLoc.message);
+        targetFolder = exportBaseFolder;
       }
 
       var baseName = applyTemplate(CFG.EXPORT_FILENAME_TEMPLATE, L);
@@ -812,10 +873,9 @@
 
   var exportMsg = "";
   if (CFG.EXPORT_SVG) {
-    exportMsg =
-      "\n\nExported SVGs to:\n" + exportBaseFolder.fsName +
-      (CFG.EXPORT_GROUP_BY_SYSTEM ? "\n(With system subfolders)" : "");
+    exportMsg = "\n\nExported SVGs to:\n" + exportBaseFolder.fsName +
+      "\n(Using EXPORT_LOCATION_TEMPLATE: " + CFG.EXPORT_LOCATION_TEMPLATE + ")";
   }
 
-  alert("Generated " + LINES.length + " diagrams from:\n" + dataFile.fsName + exportMsg);
+  alert("Generated " + LINES.length + " diagrams from:\n" + dataFolder.fsName + exportMsg);
 })();
