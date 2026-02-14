@@ -5,7 +5,7 @@ This is the **new** line data format for the Illustrator `linear.jsx` script.
 - **One file per line/variant**
 - File extension: `.json`
 - Colors are **HEX** only (`#RRGGBB`)
-- No CSV compatibility or fallback
+- **No CSV compatibility or fallback**
 
 ## Folder layout
 
@@ -61,4 +61,4 @@ If `lines/` is not found, the script will prompt you to select a folder.
 
 ## Notes
 
-- Any “planned” station token extensions (`~`, `{}` icons, branching geometry, etc.) are **not** implemented in this v1 JSON switch.
+- Any “planned” station token extensions (icons, branching geometry, etc.) are **not** implemented in this v1 JSON switch.
