@@ -39,7 +39,7 @@
   "TITLE_TOP_FROM_TOP": 14,
 
   "DRAW_SUBTITLE": true,
-  "SUBTITLE_TEMPLATE": "{system} \u2022 {id} \u2022 {years}",
+  "SUBTITLE_TEMPLATE": "{system} \u2022 {region} \u2022 {years}"
   "SUBTITLE_FONT_SIZE": 18,
   "SUBTITLE_COLOR": "#5A5A5A",
   "SUBTITLE_LEFT": 12,
